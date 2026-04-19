@@ -9,11 +9,9 @@ metadata:
 spec:
   replicas: {{ .Values.replicaCount }}
   progressDeadlineSeconds: 600
+  # SQLite requires only one writer at a time
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app: chore-quest
@@ -28,6 +26,18 @@ spec:
         fsGroup: 1001
       imagePullSecrets:
         - name: ghcr-credentials
+      initContainers:
+        # Run Prisma migrations before the app starts (creates DB on first run)
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["npx", "prisma", "migrate", "deploy"]
+          env:
+            - name: DATABASE_URL
+              value: "file:/data/chorequest.db"
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -42,7 +52,7 @@ spec:
             readOnlyRootFilesystem: false
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: {{ .Values.service.port }}
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -50,7 +60,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: {{ .Values.service.port }}
             initialDelaySeconds: 10
             periodSeconds: 5
@@ -59,17 +69,21 @@ spec:
           env:
             - name: NODE_ENV
               value: "production"
+            - name: DATABASE_URL
+              value: "file:/data/chorequest.db"
             - name: NEXTAUTH_URL
               value: "https://{{ .Values.ingress.host }}"
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.secretName }}
-                  key: database-url
             - name: NEXTAUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.secretName }}
                   key: nextauth-secret
+          volumeMounts:
+            - name: data
+              mountPath: /data
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "chore-quest.fullname" . }}-data

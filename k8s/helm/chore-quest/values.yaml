@@ -27,5 +27,8 @@ ingress:
   host: chore-quest.dresponda.com
   annotations: {}
 
+storage:
+  size: "2Gi"
+
 secrets:
   secretName: "chore-quest-secret"
