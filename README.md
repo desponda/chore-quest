@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ChoreQuest
 
-## Getting Started
+Family chore gamification app. Children earn credits by completing quests and can redeem them for rewards. Built with Next.js 16, Prisma, NextAuth, and a dark fantasy theme.
 
-First, run the development server:
+## Local Dev Setup
 
 ```bash
+git clone https://github.com/desponda/chore-quest
+cd chore-quest
+npm install
+cp .env.example .env
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then seed the database:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx prisma db push
+npx prisma db seed
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+App runs at http://localhost:3000. On first load you'll be redirected to `/signin`.
 
-## Learn More
+**Default dev login:** `parent@example.com` / `password123`
+**Parent PIN (for parent dashboard):** `1234`
 
-To learn more about Next.js, take a look at the following resources:
+## PostgreSQL Local Dev
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Start PostgreSQL with docker compose:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+docker compose up postgres
+```
 
-## Deploy on Vercel
+Then update `.env`:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+DATABASE_URL="postgresql://chorequest:chorequest@localhost:5432/chorequest"
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Copy the PostgreSQL schema and push:
+
+```bash
+cp prisma/schema.postgresql.prisma prisma/schema.prisma
+npx prisma db push
+npx prisma db seed
+```
+
+Then run `npm run dev` as usual.
+
+## How It Works
+
+- `/` — Family hub, choose your hero (requires sign-in)
+- `/child/[id]/quests` — Hero's quest board
+- `/child/[id]/rewards` — Treasure vault for spending credits
+- `/parent` — Parent dashboard (requires sign-in + 4-digit PIN)
+- `/signin`, `/signup` — Auth pages
+
+Multi-tenant: each family account has its own isolated children, quests, and rewards.
+
+## API Reference
+
+`GET /api` — self-documenting endpoint listing all available routes.
+
+All API routes require an authenticated session cookie.
+
+Key endpoints:
+- `GET /api/children` — list heroes
+- `POST /api/children` — create hero
+- `GET /api/quests` — list quests
+- `POST /api/quests` — create quest (with optional `assignTo: [childId]`)
+- `GET /api/rewards` — list rewards
+- `POST /api/rewards` — create reward
+- `PATCH /api/children/[id]` — adjust credits (`creditsAdjustment: ±N`) or rename
+
+## Deployment to k3s Homelab
+
+Uses ArgoCD + Cloudflare Tunnel. See [homelab-k8s-infra](https://github.com/desponda/homelab-k8s-infra) for cluster setup.
+
+Before deploying, create the k8s secret:
+
+```bash
+kubectl create namespace chore-quest
+kubectl create secret generic chore-quest-secret \
+  --namespace chore-quest \
+  --from-literal=database-url="postgresql://user:pass@host:5432/chorequest" \
+  --from-literal=nextauth-secret="$(openssl rand -base64 32)"
+```
+
+Also create the ghcr pull secret:
+
+```bash
+kubectl create secret docker-registry ghcr-credentials \
+  --namespace chore-quest \
+  --docker-server=ghcr.io \
+  --docker-username=desponda \
+  --docker-password=<github-pat>
+```
+
+The GitHub Actions workflow builds on push to `main` and updates `k8s/helm/chore-quest/values.yaml` with the new image tag. ArgoCD picks up the change and deploys automatically.
+
+Add to homelab-k8s-infra `applications/apps/chore-quest.yaml`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chore-quest
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/desponda/chore-quest.git
+    targetRevision: main
+    path: k8s/helm/chore-quest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: chore-quest
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
