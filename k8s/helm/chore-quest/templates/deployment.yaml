@@ -31,7 +31,7 @@ spec:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["npx", "prisma", "migrate", "deploy"]
+          command: ["node_modules/.bin/prisma", "migrate", "deploy"]
           env:
             - name: DATABASE_URL
               value: "file:/data/chorequest.db"
