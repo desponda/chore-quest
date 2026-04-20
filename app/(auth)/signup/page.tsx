@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { signUp } from './actions'
 import Link from 'next/link'
 import { Icon } from '@iconify/react'
@@ -8,6 +9,7 @@ import { Icon } from '@iconify/react'
 export default function SignupPage() {
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -18,9 +20,14 @@ export default function SignupPage() {
       setError('Passwords do not match')
       return
     }
+    setError('')
     startTransition(async () => {
       const result = await signUp(formData)
-      if (result?.error) setError(result.error)
+      if (result?.error) {
+        setError(result.error)
+      } else if (result?.success) {
+        router.push('/signin?created=1')
+      }
     })
   }
 
@@ -64,7 +71,7 @@ export default function SignupPage() {
           <input
             name="password"
             type="password"
-            placeholder="Password"
+            placeholder="Password (min 8 characters)"
             required
             minLength={8}
             className="bg-gray-900 border border-gray-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 placeholder:text-gray-600 text-sm"
