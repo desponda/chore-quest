@@ -6,7 +6,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/desponda/chore-quest
-  tag: sha-7b1e6e0
+  tag: sha-e7bed24
   pullPolicy: Always
 
 service:
